@@ -61,6 +61,12 @@ history_listbox: tk.Listbox
 history_data = []
 history_filter_start: tk.Entry
 history_filter_end: tk.Entry
+history_filter_amount_min: tk.Entry
+history_filter_amount_max: tk.Entry
+history_filter_mode: tk.StringVar
+history_filter_date: tk.Entry
+history_filter_amount: tk.Entry
+history_filter_title: tk.Entry
 
 
 # Utilitaires
@@ -132,8 +138,14 @@ def remove_history_selected():
 
 def refresh_history_ui():
     history_listbox.delete(0, "end")
-    start_val = history_filter_start.get().strip() if 'history_filter_start' in globals() else ""
-    end_val = history_filter_end.get().strip() if 'history_filter_end' in globals() else ""
+    mode = history_filter_mode.get() if history_filter_mode else ""
+    date_exacte = history_filter_date.get().strip() if history_filter_date else ""
+    start_val = history_filter_start.get().strip() if history_filter_start else ""
+    end_val = history_filter_end.get().strip() if history_filter_end else ""
+    amount_exact = history_filter_amount.get().strip() if history_filter_amount else ""
+    min_val = history_filter_amount_min.get().strip() if history_filter_amount_min else ""
+    max_val = history_filter_amount_max.get().strip() if history_filter_amount_max else ""
+    title_val = history_filter_title.get().strip().lower() if history_filter_title else ""
 
     def parse_filter_date(val: str):
         try:
@@ -141,8 +153,18 @@ def refresh_history_ui():
         except Exception:
             return None
 
+    def parse_amount(val: str):
+        try:
+            return float(val.replace(",", "."))
+        except Exception:
+            return None
+
+    date_target = parse_filter_date(date_exacte) if date_exacte else None
     start_date = parse_filter_date(start_val) if start_val else None
     end_date = parse_filter_date(end_val) if end_val else None
+    amount_target = parse_amount(amount_exact) if amount_exact else None
+    min_amount = parse_amount(min_val) if min_val else None
+    max_amount = parse_amount(max_val) if max_val else None
 
     for entry in history_data:
         file_name = os.path.basename(entry.get("file", ""))
@@ -156,10 +178,33 @@ def refresh_history_ui():
             continue
         if end_date and dt_obj and dt_obj > end_date:
             continue
+        if date_target and dt_obj and dt_obj != date_target:
+            continue
 
         meta = entry.get("meta", {})
+        amount = meta.get("total_ht")
+        if amount is None:
+            amount = meta.get("somme_facture", 0)
+        try:
+            amount_val = float(str(amount).replace(",", "."))
+        except Exception:
+            amount_val = 0.0
+
+        if amount_target is not None and abs(amount_val - amount_target) > 0.001:
+            continue
+        if min_amount is not None and amount_val < min_amount:
+            continue
+        if max_amount is not None and amount_val > max_amount:
+            continue
+
+        if title_val:
+            search_zone = f"{file_name} {meta.get('numero_otfi','')} {meta.get('code_sous_projet','')} {meta.get('code_projet','')}".lower()
+            if title_val not in search_zone:
+                continue
+
         ref = meta.get("numero_otfi") or meta.get("code_sous_projet") or meta.get("code_projet") or ""
-        display = f"{dt_str} | {ref} | {file_name}"
+        amount_txt = f"{amount_val:.2f} FCFA" if amount_val else "-"
+        display = f"{dt_str} | {ref} | {amount_txt} | {file_name}"
         history_listbox.insert("end", display)
 
 
@@ -168,11 +213,60 @@ def apply_history_filter():
 
 
 def clear_history_filter():
-    if history_filter_start:
-        history_filter_start.delete(0, "end")
-    if history_filter_end:
-        history_filter_end.delete(0, "end")
+    history_filter_mode.set("date_exacte")
+    for ent in [
+        history_filter_date,
+        history_filter_start,
+        history_filter_end,
+        history_filter_amount,
+        history_filter_amount_min,
+        history_filter_amount_max,
+        history_filter_title,
+    ]:
+        if ent:
+            ent.delete(0, "end")
+    render_filter_fields()
     refresh_history_ui()
+
+
+def export_history_excel():
+    """Exporte l'historique des factures en Excel."""
+    if not history_data:
+        messagebox.showinfo("Historique", "Aucune facture dans l'historique.")
+        return
+
+    path = filedialog.asksaveasfilename(
+        title="Exporter l'historique en Excel",
+        defaultextension=".xlsx",
+        filetypes=[("Excel", "*.xlsx")],
+        initialfile="historique_factures.xlsx",
+    )
+    if not path:
+        return
+
+    rows = []
+    for entry in history_data:
+        meta = entry.get("meta", {})
+        amount = meta.get("total_ht")
+        if amount is None:
+            amount = meta.get("somme_facture", "")
+        rows.append(
+            {
+                "date_heure": entry.get("datetime", ""),
+                "fichier": entry.get("file", ""),
+                "numero_otfi": meta.get("numero_otfi", ""),
+                "code_sous_projet": meta.get("code_sous_projet", ""),
+                "code_projet": meta.get("code_projet", ""),
+                "somme_facture": meta.get("somme_facture", ""),
+                "total_ht": amount,
+            }
+        )
+    df = pd.DataFrame(rows)
+    try:
+        df.to_excel(path, index=False)
+        messagebox.showinfo("Export Excel", f"Historique exporte :\n{path}")
+    except Exception as e:
+        messagebox.showerror("Erreur", f"Impossible d'exporter :\n{e}")
 
 
 def export_excel_template():
@@ -642,71 +736,157 @@ tk.Label(
 ).pack(anchor="w", pady=(4, 10))
 
 filters_row = tk.Frame(history_card, bg=COLORS["card"])
-filters_row.pack(fill="x", pady=(0, 8))
-tk.Label(filters_row, text="Date debut (JJ/MM/AAAA)", font=SUBTITLE_FONT, bg=COLORS["card"], fg=COLORS["text"]).grid(
+filters_row.pack(fill="x", pady=(0, 10))
+tk.Label(filters_row, text="Filtrer par", font=SUBTITLE_FONT, bg=COLORS["card"], fg=COLORS["text"]).grid(
     row=0, column=0, sticky="w", padx=(0, 6)
 )
-history_filter_start = tk.Entry(filters_row, font=ENTRY_FONT, width=14, bd=1, relief="solid", highlightthickness=0)
-history_filter_start.grid(row=0, column=1, padx=(0, 6))
-tk.Button(
-    filters_row,
-    text="📅",
-    command=lambda: open_date_picker(history_filter_start, "Date debut historique"),
-    bg="#e2e8f0",
-    fg=COLORS["text"],
-    activebackground="#e2e8f0",
-    activeforeground=COLORS["text"],
-    bd=0,
-    padx=6,
-    pady=1,
-    cursor="hand2",
-).grid(row=0, column=2, padx=(0, 10))
-tk.Label(filters_row, text="Date fin (JJ/MM/AAAA)", font=SUBTITLE_FONT, bg=COLORS["card"], fg=COLORS["text"]).grid(
-    row=0, column=3, sticky="w", padx=(0, 6)
-)
-history_filter_end = tk.Entry(filters_row, font=ENTRY_FONT, width=14, bd=1, relief="solid", highlightthickness=0)
-history_filter_end.grid(row=0, column=4, padx=(0, 6))
-tk.Button(
-    filters_row,
-    text="📅",
-    command=lambda: open_date_picker(history_filter_end, "Date fin historique"),
-    bg="#e2e8f0",
-    fg=COLORS["text"],
-    activebackground="#e2e8f0",
-    activeforeground=COLORS["text"],
-    bd=0,
-    padx=6,
-    pady=1,
-    cursor="hand2",
-).grid(row=0, column=5, padx=(0, 10))
-tk.Button(
-    filters_row,
-    text="Filtrer",
-    command=apply_history_filter,
-    bg=COLORS["accent"],
-    fg="white",
-    activebackground=COLORS["accent"],
-    activeforeground="white",
-    bd=0,
-    padx=10,
-    pady=6,
-    font=BUTTON_FONT,
-    cursor="hand2",
-).grid(row=0, column=6, padx=(0, 6))
-tk.Button(
-    filters_row,
-    text="Reinitialiser filtre",
-    command=clear_history_filter,
-    bg="#e2e8f0",
-    fg=COLORS["text"],
-    activebackground="#e2e8f0",
-    activeforeground=COLORS["text"],
-    bd=0,
-    padx=10,
-    pady=6,
-    font=BUTTON_FONT,
-    cursor="hand2",
-).grid(row=0, column=7)
+history_filter_mode = tk.StringVar(value="date_exacte")
+mode_options = [
+    ("Date exacte", "date_exacte"),
+    ("Intervalle de dates", "date_intervalle"),
+    ("Montant exact", "montant_exact"),
+    ("Intervalle de montant", "montant_intervalle"),
+    ("Titre / reference", "titre"),
+]
+tk.OptionMenu(filters_row, history_filter_mode, *[opt[1] for opt in mode_options]).grid(row=0, column=1, padx=(0, 10), sticky="w")
+
+dynamic_filter_area = tk.Frame(filters_row, bg=COLORS["card"])
+dynamic_filter_area.grid(row=1, column=0, columnspan=8, sticky="w")
+
+history_filter_date = None
+history_filter_start = None
+history_filter_end = None
+history_filter_amount = None
+history_filter_amount_min = None
+history_filter_amount_max = None
+history_filter_title = None
+
+
+def render_filter_fields(*args):
+    for child in dynamic_filter_area.winfo_children():
+        child.destroy()
+
+    mode = history_filter_mode.get()
+    global history_filter_date, history_filter_start, history_filter_end
+    global history_filter_amount, history_filter_amount_min, history_filter_amount_max, history_filter_title
+
+    history_filter_date = history_filter_start = history_filter_end = None
+    history_filter_amount = history_filter_amount_min = history_filter_amount_max = None
+    history_filter_title = None
+
+    row_base = 0
+    if mode == "date_exacte":
+        tk.Label(dynamic_filter_area, text="Date (JJ/MM/AAAA)", font=SUBTITLE_FONT, bg=COLORS["card"], fg=COLORS["text"]).grid(
+            row=row_base, column=0, sticky="w", padx=(0, 6)
+        )
+        history_filter_date = tk.Entry(dynamic_filter_area, font=ENTRY_FONT, width=14, bd=1, relief="solid", highlightthickness=0)
+        history_filter_date.grid(row=row_base, column=1, padx=(0, 6))
+        tk.Button(
+            dynamic_filter_area,
+            text="📅",
+            command=lambda: open_date_picker(history_filter_date, "Date exacte historique"),
+            bg="#e2e8f0",
+            fg=COLORS["text"],
+            activebackground="#e2e8f0",
+            activeforeground=COLORS["text"],
+            bd=0,
+            padx=6,
+            pady=1,
+            cursor="hand2",
+        ).grid(row=row_base, column=2, padx=(0, 10))
+    elif mode == "date_intervalle":
+        tk.Label(dynamic_filter_area, text="Date debut (JJ/MM/AAAA)", font=SUBTITLE_FONT, bg=COLORS["card"], fg=COLORS["text"]).grid(
+            row=row_base, column=0, sticky="w", padx=(0, 6)
+        )
+        history_filter_start = tk.Entry(dynamic_filter_area, font=ENTRY_FONT, width=14, bd=1, relief="solid", highlightthickness=0)
+        history_filter_start.grid(row=row_base, column=1, padx=(0, 6))
+        tk.Button(
+            dynamic_filter_area,
+            text="📅",
+            command=lambda: open_date_picker(history_filter_start, "Date debut historique"),
+            bg="#e2e8f0",
+            fg=COLORS["text"],
+            activebackground="#e2e8f0",
+            activeforeground=COLORS["text"],
+            bd=0,
+            padx=6,
+            pady=1,
+            cursor="hand2",
+        ).grid(row=row_base, column=2, padx=(0, 10))
+        tk.Label(dynamic_filter_area, text="Date fin (JJ/MM/AAAA)", font=SUBTITLE_FONT, bg=COLORS["card"], fg=COLORS["text"]).grid(
+            row=row_base, column=3, sticky="w", padx=(0, 6)
+        )
+        history_filter_end = tk.Entry(dynamic_filter_area, font=ENTRY_FONT, width=14, bd=1, relief="solid", highlightthickness=0)
+        history_filter_end.grid(row=row_base, column=4, padx=(0, 6))
+        tk.Button(
+            dynamic_filter_area,
+            text="📅",
+            command=lambda: open_date_picker(history_filter_end, "Date fin historique"),
+            bg="#e2e8f0",
+            fg=COLORS["text"],
+            activebackground="#e2e8f0",
+            activeforeground=COLORS["text"],
+            bd=0,
+            padx=6,
+            pady=1,
+            cursor="hand2",
+        ).grid(row=row_base, column=5, padx=(0, 10))
+    elif mode == "montant_exact":
+        tk.Label(dynamic_filter_area, text="Montant exact (FCFA)", font=SUBTITLE_FONT, bg=COLORS["card"], fg=COLORS["text"]).grid(
+            row=row_base, column=0, sticky="w", padx=(0, 6)
+        )
+        history_filter_amount = tk.Entry(dynamic_filter_area, font=ENTRY_FONT, width=14, bd=1, relief="solid", highlightthickness=0)
+        history_filter_amount.grid(row=row_base, column=1, padx=(0, 6))
+    elif mode == "montant_intervalle":
+        tk.Label(dynamic_filter_area, text="Montant min", font=SUBTITLE_FONT, bg=COLORS["card"], fg=COLORS["text"]).grid(
+            row=row_base, column=0, sticky="w", padx=(0, 6)
+        )
+        history_filter_amount_min = tk.Entry(dynamic_filter_area, font=ENTRY_FONT, width=14, bd=1, relief="solid", highlightthickness=0)
+        history_filter_amount_min.grid(row=row_base, column=1, padx=(0, 10))
+        tk.Label(dynamic_filter_area, text="Montant max", font=SUBTITLE_FONT, bg=COLORS["card"], fg=COLORS["text"]).grid(
+            row=row_base, column=2, sticky="w", padx=(0, 6)
+        )
+        history_filter_amount_max = tk.Entry(dynamic_filter_area, font=ENTRY_FONT, width=14, bd=1, relief="solid", highlightthickness=0)
+        history_filter_amount_max.grid(row=row_base, column=3, padx=(0, 6))
+    elif mode == "titre":
+        tk.Label(dynamic_filter_area, text="Titre / reference (fichier ou code)", font=SUBTITLE_FONT, bg=COLORS["card"], fg=COLORS["text"]).grid(
+            row=row_base, column=0, sticky="w", padx=(0, 6)
+        )
+        history_filter_title = tk.Entry(dynamic_filter_area, font=ENTRY_FONT, width=26, bd=1, relief="solid", highlightthickness=0)
+        history_filter_title.grid(row=row_base, column=1, padx=(0, 6))
+
+    tk.Button(
+        dynamic_filter_area,
+        text="Filtrer",
+        command=apply_history_filter,
+        bg=COLORS["accent"],
+        fg="white",
+        activebackground=COLORS["accent"],
+        activeforeground="white",
+        bd=0,
+        padx=10,
+        pady=6,
+        font=BUTTON_FONT,
+        cursor="hand2",
+    ).grid(row=row_base + 1, column=0, padx=(0, 6), pady=(8, 0), sticky="w")
+    tk.Button(
+        dynamic_filter_area,
+        text="Reinitialiser filtre",
+        command=clear_history_filter,
+        bg="#e2e8f0",
+        fg=COLORS["text"],
+        activebackground="#e2e8f0",
+        activeforeground=COLORS["text"],
+        bd=0,
+        padx=10,
+        pady=6,
+        font=BUTTON_FONT,
+        cursor="hand2",
+    ).grid(row=row_base + 1, column=1, pady=(8, 0), sticky="w")
+
+
+history_filter_mode.trace_add("write", render_filter_fields)
+render_filter_fields()
 
 history_listbox = tk.Listbox(history_card, height=8, font=ENTRY_FONT, activestyle="dotbox")
 history_scroll = tk.Scrollbar(history_card, orient="vertical", command=history_listbox.yview)
@@ -728,6 +908,20 @@ tk.Button(
     font=BUTTON_FONT,
     cursor="hand2",
 ).pack(anchor="e", pady=(10, 0))
+tk.Button(
+    history_card,
+    text="Exporter l'historique (Excel)",
+    command=export_history_excel,
+    bg="#e2e8f0",
+    fg=COLORS["text"],
+    activebackground="#e2e8f0",
+    activeforeground=COLORS["text"],
+    bd=0,
+    padx=12,
+    pady=8,
+    font=BUTTON_FONT,
+    cursor="hand2",
+).pack(anchor="e", pady=(6, 6))
 
 
 # Ecran formulaire manuel
