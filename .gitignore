@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+*.pyc
+output/
+dist/
+data/history.json
+*.log
+*.tmp

@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Fact - Gen </title>
+<style>
+body { font-family: 'Segoe UI', sans-serif; background-color: #f3f4f6; margin: 0; padding: 40px; }
+.container { max-width: 600px; margin: auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+input, button { width: 100%; padding: 10px; margin: 6px 0; border-radius: 6px; border: 1px solid #ccc; font-size: 14px; }
+button { cursor: pointer; font-weight: bold; }
+.btn-primary { background-color: #2196f3; color: white; border: none; }
+.btn-success { background-color: #4caf50; color: white; border: none; }
+.btn-warning { background-color: #ff9800; color: white; border: none; }
+#result { margin-top: 15px; text-align: center; font-weight: bold; }
+</style>
+</head>
+<body>
+<div class="container">
+    <h1 style="text-align:center;color:#2196f3;">Facture Generator INGRID</h1>
+    <label>Nom</label><input id="nom" type="text">
+    <label>Prénom</label><input id="prenom" type="text">
+    <label>Adresse</label><input id="adresse" type="text">
+    <label>Téléphone</label><input id="telephone" type="text">
+    <label>Date (JJ/MM/AAAA)</label><input id="date_facture" type="text">
+
+    <button class="btn-warning" onclick="choisirDossier()">📁 Choisir dossier de sortie</button>
+    <button class="btn-primary" onclick="genererManuel()">🧾 Générer facture</button>
+    <button class="btn-success" onclick="genererDepuisExcel()">📊 Générer depuis Excel</button>
+
+    <div id="result"></div>
+</div>
+
+<script>
+async function choisirDossier() {
+    let res = await pywebview.api.choisir_dossier();
+    document.getElementById('result').innerText = res;
+}
+
+async function genererManuel() {
+    let data = {
+        nom: document.getElementById('nom').value,
+        prenom: document.getElementById('prenom').value,
+        adresse: document.getElementById('adresse').value,
+        telephone: document.getElementById('telephone').value,
+        montant: document.getElementById('montant').value,
+        date_facture: document.getElementById('date_facture').value
+    };
+    let res = await pywebview.api.generer_facture(data);
+    document.getElementById('result').innerText = res;
+}
+
+async function genererDepuisExcel() {
+    let res = await pywebview.api.generer_depuis_excel();
+    document.getElementById('result').innerText = res;
+}
+</script>
+</body>
+</html>
