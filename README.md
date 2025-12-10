@@ -2,6 +2,9 @@
 
 Application de génération de factures basée sur un template Word, avec deux modes : saisie via formulaire et import Excel. Interface Tkinter modernisée, export d'historique et gestion des modèles Excel.
 
+![alt text](image.png)
+
+
 ## Fonctionnalités principales
 - **Formulaire manuel** : saisie du code projet/sous-projet/OTFI, pôles, départements, dates (pickers), période, montant global et lignes de prestations (quantité x prix, calcul du total HT).
 - **Import Excel** : génération batch depuis un fichier `.xlsx` avec les colonnes attendues. Bouton pour télécharger un **template Excel** pré-rempli avec l’exemple de structure (inclut jusqu’à 5 lignes de prestations).
