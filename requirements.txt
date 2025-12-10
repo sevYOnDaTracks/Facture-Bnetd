@@ -1,0 +1,6 @@
+docxtpl
+pandas
+openpyxl
+pillow
+tkcalendar
+pywebview
